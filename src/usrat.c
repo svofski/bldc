@@ -1,0 +1,91 @@
+//! \file
+//! \brief USART interface
+
+#include <stdio.h>
+#include <avr/io.h>
+#include <avr/interrupt.h>
+
+#include "usrat.h"
+
+static uint8_t rx_buffer[RX_BUFFER_SIZE];
+static volatile uint8_t rx_buffer_in;
+static volatile uint8_t rx_buffer_out;
+
+//! \brief a stub to use when usart is disabled
+static int uart_non(char data, FILE *f) {
+	return -1;
+}
+
+//! \brief Initialize USART, perform fdevopen with uart_putchar.
+//! \param baudval (F_CPU/(16*baudrate))-1
+//! \sa uart_putchar()
+void usart_init(uint16_t baudval) {
+	// Set baud rate
+	UBRRH = (uint8_t)(baudval>>8);
+	UBRRL = (uint8_t)baudval;
+
+	rx_buffer_in = rx_buffer_out = 0;
+
+	// Set frame format: 8 data, 1 stop bit 
+	//UCSRC = (uint8_t)((1<<URSEL) | (0<<USBS) | (3<<UCSZ0));
+	UCSRC = _BV(URSEL) | _BV(UCSZ0) | _BV(UCSZ1);
+	
+	// Enable receiver and transmitter, enable RX complete interrupt
+	UCSRB = (uint8_t)((1<<RXEN) | (1<<TXEN) | (1<<RXCIE));
+
+	(void)fdevopen(uart_putchar, uart_getchar);
+}
+
+//! \brief Disable USART completely
+void usart_stop() {
+    UCSRB = 0;
+    (void)fdevopen(uart_non, NULL);
+}
+
+//! \brief putchar() for USART.
+//! \param data character to print.
+int uart_putchar(char data, FILE* f) {
+	//while (!(UCSRA & (1<<UDRE))) {};
+	if (data == '\n') {
+		(void)uart_putchar('\r', f);
+	}
+
+	//PORTD |= 1<<5;
+	while (!(UCSRA & (1<<UDRE))) {};
+	//PORTD &= (uint8_t)(~(1<<5));
+
+	UDR = (uint8_t)data;
+
+	return 0;
+}
+
+//! \brief getchar() for USART. Wait for data if not available.
+//! \return value read.
+//! \sa uart_available()
+int uart_getchar() {
+	while (!uart_available());
+	
+	return (int) uart_getc();
+}
+
+//! \brief Check data availability in USART buffer.
+//! \return 1 if buffer is not empty.
+uint8_t uart_available() {
+	return rx_buffer_in != rx_buffer_out;
+}
+
+//! \brief Nonblocking, nonchecking getchar for USART. Use with care.
+uint8_t uart_getc() {
+	uint8_t result = rx_buffer[rx_buffer_out];
+	rx_buffer_out = (rx_buffer_out + 1) % RX_BUFFER_SIZE;
+	
+	return result;
+}
+
+ISR(USART_RXC_vect)
+{
+	rx_buffer[rx_buffer_in] = (uint8_t)UDR;
+	rx_buffer_in = (rx_buffer_in + 1) % RX_BUFFER_SIZE;
+}
+
+// $Id: usrat.c 7 2009-11-15 18:21:34Z svofski $

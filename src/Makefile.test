@@ -1,0 +1,6 @@
+CFLAGS=-std=c99 -I/opt/local/avr/include/ -DMCU_TARGET=atmega8 -D__AVR_ATmega8__ -DTEST
+
+all:	test_motor
+
+test_motor:	test_motor.o motor.o util.o
+	$(CC) -o test_motor $^
