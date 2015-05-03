@@ -3,9 +3,12 @@
 #include "adns-9800.h"
 #include "usrat.h"
 #include "xprintf.h"
+#include "qenc.h"
 #include <stdio.h>
 
-void delay(unsigned long delay)
+GPIO_InitTypeDef GPIO_InitStructure;
+
+void delay(volatile unsigned long delay)
 {
     while(delay) delay--;
 }
@@ -17,14 +20,12 @@ void RCC_Configuration(void)
 
     // Enable GPIO clock for GPIOA and GPIOB
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO, ENABLE);
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOC, ENABLE);
 }
 
 
 void GPIO_Configuration(void)
 {
-    GPIO_InitTypeDef GPIO_InitStructure;
-
     // Configure pin as output push-pull (led)
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_All;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
@@ -87,17 +88,34 @@ int main(void)
     ADNS9800_Config();
     ADNSInitialize();
 
+    // Quadrature encoder
+    QEnc_Init();    
+
     GPIOB->ODR ^= GPIO_Pin_12;
     int a = 0;
+    int lastqenc = 0;
     while(1)
     {
+
         if (xavail()) {
-            xputchar(xgetchar());
+            char c;
+            switch(c = xgetchar()) {
+            case 'f':
+                if (ADNSFrameCapture() == 0) {
+                    xprintf("DUMP\n");
+                    ADNSFrameDump();
+                }
+                break;
+            case 'H':
+                // Trap to 4
+                *((uint8_t*)(uint8_t)0x20002000) = 0x5a;
+                break;
+            }
         }
 
         ADNSDMAPoll();
         if (ADNSCheckMotion()) {
-            xprintf("%d %d SQUAL=%d\n", ADNSGetX(), ADNSGetY(), ADNSGetSQUAL());
+            xprintf("%d %d SQUAL=%d FPS=%d\n", ADNSGetX(), ADNSGetY(), ADNSGetSQUAL(), ADNSGetFramerate());
             xflush();
         }
         // if (ADNSDMAPoll()) {
@@ -106,15 +124,16 @@ int main(void)
         // }
 
         a = (a + 1) % 10;
-        GPIOA->ODR ^= GPIO_Pin_12;
-        GPIOB->ODR ^= GPIO_Pin_12;
-        Delay_us100(4);
+        // GPIOA->ODR ^= GPIO_Pin_12;
+        // GPIOB->ODR ^= GPIO_Pin_12;
+        Delay_us100(40);
         //Delay_us100(500);
+        //xprintf("%04x %c %c\n", GPIOB->IDR, ((GPIOB->IDR & 16) != 0) ? '*' : '_', ((GPIOB->IDR & 8) != 0) ? '*' : '_');
+        int qenc = QEnc_GetPosition();
+        if (qenc != lastqenc) {
+            xprintf("Q=%d\n", qenc);    
+            lastqenc = qenc;
+        }
+        
     }
-}
-
-void HardFault_Handler(void)
-{
-    GPIOA->ODR |= GPIO_Pin_12;
-    for(;;);
 }

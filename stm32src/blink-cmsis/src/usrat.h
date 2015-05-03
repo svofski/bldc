@@ -1,7 +1,8 @@
 #pragma once
 
+#define DEBUG_USARTN 3
+
 void USART_Config(void);
-void USART1_IRQHandler(void);
 int xputchar(int c);
 int xavail(void);
 int xgetchar(void);

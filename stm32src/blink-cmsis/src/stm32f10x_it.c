@@ -149,17 +149,17 @@ void PendSV_Handler(void)
   * @param  None
   * @retval None
   */
-void EXTI0_IRQHandler(void)
-{
-	if(EXTI_GetITStatus(EXTI_Line0) != RESET)
-	{
-		/* Toggle LED3 */
-		GPIOC->ODR ^= GPIO_Pin_8;
+// void EXTI0_IRQHandler(void)
+// {
+// 	if(EXTI_GetITStatus(EXTI_Line0) != RESET)
+// 	{
+// 		/* Toggle LED3 */
+// 		GPIOC->ODR ^= GPIO_Pin_8;
 
-		/* Clear the User Button EXTI line pending bit */
-		EXTI_ClearITPendingBit(EXTI_Line0);
-	}
-}
+// 		/* Clear the User Button EXTI line pending bit */
+// 		EXTI_ClearITPendingBit(EXTI_Line0);
+// 	}
+// }
 
 /******************************************************************************/
 /*                 STM32F10x Peripherals Interrupt Handlers                   */

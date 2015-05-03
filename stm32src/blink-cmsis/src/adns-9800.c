@@ -7,7 +7,12 @@
 #include "delay.h"
 
 #include "adns9800_srom_A6.h"
+#include "adns9500_srom_91.h"
 
+// #define ADNS_FIRMWARE_VERSION 0x91
+// #define adns_firmware_data SROM91
+
+#define ADNS_FIRMWARE_VERSION 0xA6
 #define adns_firmware_data SROMA6
 
 #define ADNS_CS_GPIO    GPIOA
@@ -64,7 +69,17 @@ static void configureDMA(void);
 static uint8_t modifyReg(const char* name, uint8_t addr, uint8_t newvalue);
 static uint16_t modifyReg16(const char* name, uint8_t addr_upper, uint16_t newvalue);
 
+typedef enum {
+    DUMMY,
+    SROM_DOWNLOAD,
+    FRAME_CAPTURE
+} TimerModeEnum;
+
 static volatile int DataReadyFlag;
+static volatile TimerModeEnum TimerMode;
+
+uint8_t frame_data[ADNS_FRAME_PIXEL_COUNT];
+int frame_i;
 
 int rel_x, rel_y;
 int abs_x, abs_y;
@@ -77,9 +92,23 @@ ADNSMotionStruct motionStruct;
 void TIM1_UP_IRQHandler(void)
 {
     TIM1->SR &= ~TIM_SR_UIF;
-    SPI_ADNS->DR = adns_firmware_data[adns_firmware_data_i++];
-    if (adns_firmware_data_i == sizeof(adns_firmware_data)/sizeof(adns_firmware_data[0])) {
-        TIM1->CR1 &= ~1;
+    switch (TimerMode) {
+        case DUMMY:
+            break;
+        case SROM_DOWNLOAD:
+            SPI_ADNS->DR = adns_firmware_data[adns_firmware_data_i++];
+            if (adns_firmware_data_i == sizeof(adns_firmware_data)/sizeof(adns_firmware_data[0])) {
+                TIM1->CR1 &= ~1;
+            }
+            break;
+        case FRAME_CAPTURE:
+            frame_data[frame_i++] = SPI_ADNS->DR;            
+            if (frame_i == ADNS_FRAME_PIXEL_COUNT) {
+                TIM1->CR1 &= ~1;
+            } else {
+                SPI_ADNS->DR = 0;
+            }
+            break;
     }
 }
 
@@ -233,7 +262,7 @@ int ADNSCheckFirmware(void)
 {
     uint8_t SROM_id = ADNSReadReg(ADNS_SROM_ID);
     xprintf("%s: SROM ID=%X\n", TAG, SROM_id);
-    if (SROM_id != 0xA6) {
+    if (SROM_id != ADNS_FIRMWARE_VERSION) {
         xprintf("%s: SROM ID mismatch. Abort.\n", TAG);
         return -1;
     }
@@ -249,22 +278,27 @@ int ADNSCheckFirmware(void)
 int ADNSConfigureResolution(void)
 {
     // Set resolution: 0x01 = 50cpi, minimum, 0x44 = 3400 default, 0x8e = 7100, 0xA4 = 8200 (maximum)
-    modifyReg("Configuration_I", ADNS_Configuration_I, 0xA4);
-    // Disable rest mode, 0x08 = fixed frame rate, disable AGC
-    modifyReg("Configuration_II", ADNS_Configuration_II, 0x08 + 0x10);
+    modifyReg("Configuration_I", ADNS_Configuration_I, 0x2);
+
+    // modifyReg("Configuration_I", ADNS_Configuration_I, 0xA4);
+    // // Disable rest mode, 0x08 = fixed frame rate, disable AGC
+    // modifyReg("Configuration_II", ADNS_Configuration_II, 0x08 + 0x10);
+    modifyReg("Configuration_II", ADNS_Configuration_II, 0);
         
-    // Default value for Shutter_Max_Bound is 0x4e20, this allows long exposure but limits maximum frame rate.
-    // Frame rate, defined by Frame_Period_Max_Bound register, which must be written last in this sequence,
-    // is constrained by this formula:
-    // Frame_Period_Max_Bound >= Frame_Period_Min_Bound + Shutter_Max_Bound    
-    uint16_t shutterMaxBound = 0x100;  // default value = 0x4e20, 0x100 allows 11748 fps tracking but requires better surface quality
-    modifyReg16("Shutter_Max_Bound", ADNS_Shutter_Max_Bound_Upper, shutterMaxBound);
-    modifyReg16("Frame_Period_Min_Bound", ADNS_Frame_Period_Min_Bound_Upper, 0x0fa0); // 0x0fa0 is the minimal allowed value
-    // Set upper frame bound (default 0x5dc0 = 0x4e20 + 0x0fa0)
-    // This register must be written last. This write also activates Shutter_Max_Bound and Frame_Period_Min_Bound settings.
-    modifyReg16("Frame_Period_Max_Bound", ADNS_Frame_Period_Max_Bound_Upper, 0x0fa0 + shutterMaxBound);
-    // Must seriously wait after setting this register
-    Delay_us100(2);
+    // modifyReg("Snap_Angle", ADNS_Snap_Angle, 0x86);
+
+    // // Default value for Shutter_Max_Bound is 0x4e20, this allows long exposure but limits maximum frame rate.
+    // // Frame rate, defined by Frame_Period_Max_Bound register, which must be written last in this sequence,
+    // // is constrained by this formula:
+    // // Frame_Period_Max_Bound >= Frame_Period_Min_Bound + Shutter_Max_Bound    
+    // uint16_t shutterMaxBound = 0x100;  // default value = 0x4e20, 0x100 allows 11748 fps tracking but requires better surface quality
+    // modifyReg16("Shutter_Max_Bound", ADNS_Shutter_Max_Bound_Upper, shutterMaxBound);
+    // modifyReg16("Frame_Period_Min_Bound", ADNS_Frame_Period_Min_Bound_Upper, 0x0fa0); // 0x0fa0 is the minimal allowed value
+    // // Set upper frame bound (default 0x5dc0 = 0x4e20 + 0x0fa0)
+    // // This register must be written last. This write also activates Shutter_Max_Bound and Frame_Period_Min_Bound settings.
+    // modifyReg16("Frame_Period_Max_Bound", ADNS_Frame_Period_Max_Bound_Upper, 0x0fa0 + shutterMaxBound);
+    // // Must seriously wait after setting this register
+    // Delay_us100(2);
 
     return 0;
 }
@@ -278,6 +312,7 @@ int ADNSDMAPoll(void)
     if (DataReadyFlag) {
         return 1;
     }
+
     DataReadyFlag = 0;
 
     adns_cs_begin;
@@ -311,6 +346,7 @@ int ADNSCheckMotion(void)
     if (DataReadyFlag) {
         abs_x += motionStruct.Fields.Dx;
         abs_y += motionStruct.Fields.Dy;
+        frameRate = 50000000L / ((motionStruct.Fields.FrameRate_Upper << 8) + motionStruct.Fields.FrameRate_Lower);
         DataReadyFlag = 0;
         return motionStruct.Fields.Motion & 0x80;
     }
@@ -363,6 +399,10 @@ int ADNSGetSQUAL() {
     return motionStruct.Fields.SQUAL;
 }
 
+int ADNSGetFramerate() {
+    return frameRate;
+}
+
 void ADNSLaserOn(void)
 {
     //enable laser(bit 0 = 0b), in normal mode (bits 3,2,1 = 000b)
@@ -389,6 +429,8 @@ static void uploadFirmware(void)
 
     TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
     TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE);
+
+    TimerMode = SROM_DOWNLOAD;
     TIM_Cmd(TIM1, ENABLE);
 
     NVIC_EnableIRQ(TIM1_UP_IRQn);
@@ -403,6 +445,95 @@ static void uploadFirmware(void)
     // wait for the last transaction to clear up
     while (SPI_I2S_GetFlagStatus(SPI_ADNS, SPI_I2S_FLAG_TXE) == RESET);
     (void) SPI1->DR;
+}
+
+int ADNSFrameCapture(void)
+{
+    frame_i = 0;
+
+    // Preconfigure the timer
+    TIM_TimeBaseStructInit(&TIM_TimeBaseInitStruct); 
+    TIM_TimeBaseInitStruct.TIM_Period = (SystemCoreClock / SROM_BYTE_FREQ) - 1;
+    TIM_TimeBaseInitStruct.TIM_Prescaler = 0x0;
+    TIM_TimeBaseInitStruct.TIM_ClockDivision = 0x0;
+    TIM_TimeBaseInitStruct.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_TimeBaseInit(TIM1, &TIM_TimeBaseInitStruct);
+
+    TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
+    TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE);
+
+
+    ADNSWriteReg(ADNS_Power_Up_Reset, 0x5a); // force reset
+    Delay_us100(100);
+    //ADNSWriteReg(ADNS_Configuration_II, 0x10);
+    Delay_us100(1);
+    SPI_ADNS->DR;
+    //ADNSLaserOn();
+
+    for(;;) {
+        xprintf("\nDUMP\n");
+        adns_cs(    
+            delay(100);
+            // 3. Write 0x93 to Frame_Capture register
+            spiTxRx(ADNS_Frame_Capture | 0x80);
+            spiTxRx(0x93);
+            delay(100);
+            spiTxRx(ADNS_Frame_Capture | 0x80);
+            spiTxRx(0xc5);
+
+            // 5. Wait for two frames
+            delay(1000);
+            do {
+                delay(100);
+                spiTxRx(ADNS_Motion);
+            } while ((spiTxRx(0) & 0x01) != 0x01);
+            delay(100);
+
+            spiTxRx(ADNS_Pixel_Burst);
+
+            delay(100);
+            
+            for(int i = 0; i < ADNS_FRAME_PIXEL_COUNT; i++) {
+                frame_data[i] = spiTxRx(0);
+                xputchar(frame_data[i] + 32);
+                delay(18);
+            }
+            // // start pumping the first pixel 
+            // SPI_ADNS->DR = 0;
+
+            // TimerMode = FRAME_CAPTURE;
+            // TIM_Cmd(TIM1, ENABLE);
+
+            // NVIC_EnableIRQ(TIM1_UP_IRQn);
+
+            // xprintf("%s: Downloading frame", TAG);
+
+            // while(TIM1->CR1 & TIM_CR1_CEN) {
+            //     Delay_us100(100);
+            //     xputchar('.');
+            // }
+            // xputchar('\n');
+            // TIM_Cmd(TIM1, DISABLE);
+
+            // wait for the last transaction to clear up
+            //while (SPI_I2S_GetFlagStatus(SPI_ADNS, SPI_I2S_FLAG_RXNE) == RESET);
+            (void) SPI1->DR;
+        );
+        delay(100);
+        //Delay_us100(1);
+        //ADNSFrameDump();
+    }
+    return 0;
+}
+
+void ADNSFrameDump(void) 
+{
+    frame_i = 0;
+    // for (int y = 0; y < 30; y++, xputchar('\n')) {
+    //     for (int x = 0; x < 30; x++) xprintf("%02x ", frame_data[frame_i++]);
+    // }
+    for (int i = 0; i < ADNS_FRAME_PIXEL_COUNT; i++) xprintf("%02x ", frame_data[i]);
+    xprintf("\n");
 }
 
 static uint8_t modifyReg(const char* name, uint8_t addr, uint8_t newvalue)

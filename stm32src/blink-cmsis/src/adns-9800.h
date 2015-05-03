@@ -44,9 +44,12 @@
 #define ADNS_Power_Up_Reset                       0x3a
 #define ADNS_Shutdown                             0x3b
 #define ADNS_Inverse_Product_ID                   0x3f
+#define ADNS_Snap_Angle							  0x42
 #define ADNS_Motion_Burst                         0x50
 #define ADNS_SROM_Load_Burst                      0x62
 #define ADNS_Pixel_Burst                          0x64
+
+#define ADNS_FRAME_PIXEL_COUNT					  900
 
 typedef union {
 	struct {
@@ -78,4 +81,7 @@ int ADNSDMAPoll(void);
 int ADNSCheckMotion(void);
 int ADNSGetX(void);
 int ADNSGetY(void);
+int ADNSGetFramerate(void);
 void ADNSLaserOn(void);
+int ADNSFrameCapture(void);
+void ADNSFrameDump(void);
