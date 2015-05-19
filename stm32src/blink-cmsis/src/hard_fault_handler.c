@@ -24,6 +24,8 @@ void HardFault_HandlerC(unsigned long *hardfault_args){
     volatile unsigned long _BFAR __attribute__((unused));
     volatile unsigned long _MMAR __attribute__((unused));
 
+    volatile unsigned long _BFSR __attribute__((unused));
+
     stacked_r0 = ((unsigned long)hardfault_args[0]) ;
     stacked_r1 = ((unsigned long)hardfault_args[1]) ;
     stacked_r2 = ((unsigned long)hardfault_args[2]) ;
@@ -36,6 +38,7 @@ void HardFault_HandlerC(unsigned long *hardfault_args){
     // Configurable Fault Status Register
     // Consists of MMSR, BFSR and UFSR
     _CFSR = (*((volatile unsigned long *)(0xE000ED28))) ;
+    _BFSR = (*((volatile unsigned long *)(0xE000ED29))) ;
 
     // Hard Fault Status Register
     _HFSR = (*((volatile unsigned long *)(0xE000ED2C))) ;

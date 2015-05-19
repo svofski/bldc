@@ -89,22 +89,22 @@ int squal;
 ADNSMotionStruct motionStruct;
 
 // Feed SROM bytes to the sensor at timer's pace (the pace should be 15uS between bytes)
-void TIM1_UP_IRQHandler(void)
+void TIM2_IRQHandler(void)
 {
-    TIM1->SR &= ~TIM_SR_UIF;
+    TIM2->SR &= ~TIM_SR_UIF;
     switch (TimerMode) {
         case DUMMY:
             break;
         case SROM_DOWNLOAD:
             SPI_ADNS->DR = adns_firmware_data[adns_firmware_data_i++];
             if (adns_firmware_data_i == sizeof(adns_firmware_data)/sizeof(adns_firmware_data[0])) {
-                TIM1->CR1 &= ~1;
+                TIM2->CR1 &= ~1;
             }
             break;
         case FRAME_CAPTURE:
             frame_data[frame_i++] = SPI_ADNS->DR;            
             if (frame_i == ADNS_FRAME_PIXEL_COUNT) {
-                TIM1->CR1 &= ~1;
+                TIM2->CR1 &= ~1;
             } else {
                 SPI_ADNS->DR = 0;
             }
@@ -133,8 +133,9 @@ void ADNS9800_Config(void)
     SPI_InitTypeDef SPI_InitStructure;
     GPIO_InitTypeDef GPIO_InitStructure;
 
-    // Enable SPI1, TIM1 Periph clock
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1 | RCC_APB2Periph_TIM1, ENABLE);
+    // Enable SPI1, TIM2 Periph clock
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1, ENABLE);
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
     // Enable DMA1 Periph clock
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 
@@ -415,7 +416,7 @@ void ADNSLaserOn(void)
 }
 
 // SROM is uploaded in burst mode, but there's a required pace of 15uS between bytes.
-// So bytes should be fed one by one. This is done using TIM1.
+// So bytes should be fed one by one. This is done using TIM2.
 static void uploadFirmware(void) 
 {
     adns_firmware_data_i = 0;
@@ -425,22 +426,22 @@ static void uploadFirmware(void)
     TIM_TimeBaseInitStruct.TIM_Prescaler = 0x0;
     TIM_TimeBaseInitStruct.TIM_ClockDivision = 0x0;
     TIM_TimeBaseInitStruct.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_TimeBaseInit(TIM1, &TIM_TimeBaseInitStruct);
+    TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStruct);
 
-    TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
-    TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE);
+    TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+    TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
 
     TimerMode = SROM_DOWNLOAD;
-    TIM_Cmd(TIM1, ENABLE);
+    TIM_Cmd(TIM2, ENABLE);
 
-    NVIC_EnableIRQ(TIM1_UP_IRQn);
+    NVIC_EnableIRQ(TIM2_IRQn);
 
-    while(TIM1->CR1 & TIM_CR1_CEN) {
+    while(TIM2->CR1 & TIM_CR1_CEN) {
         Delay_us100(100);
         xputchar('.');
     }
     xputchar('\n');
-    TIM_Cmd(TIM1, DISABLE);
+    TIM_Cmd(TIM2, DISABLE);
 
     // wait for the last transaction to clear up
     while (SPI_I2S_GetFlagStatus(SPI_ADNS, SPI_I2S_FLAG_TXE) == RESET);
@@ -457,10 +458,10 @@ int ADNSFrameCapture(void)
     TIM_TimeBaseInitStruct.TIM_Prescaler = 0x0;
     TIM_TimeBaseInitStruct.TIM_ClockDivision = 0x0;
     TIM_TimeBaseInitStruct.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_TimeBaseInit(TIM1, &TIM_TimeBaseInitStruct);
+    TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStruct);
 
-    TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
-    TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE);
+    TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+    TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
 
 
     ADNSWriteReg(ADNS_Power_Up_Reset, 0x5a); // force reset
@@ -502,18 +503,18 @@ int ADNSFrameCapture(void)
             // SPI_ADNS->DR = 0;
 
             // TimerMode = FRAME_CAPTURE;
-            // TIM_Cmd(TIM1, ENABLE);
+            // TIM_Cmd(TIM2, ENABLE);
 
-            // NVIC_EnableIRQ(TIM1_UP_IRQn);
+            // NVIC_EnableIRQ(TIM2_UP_IRQn);
 
             // xprintf("%s: Downloading frame", TAG);
 
-            // while(TIM1->CR1 & TIM_CR1_CEN) {
+            // while(TIM2->CR1 & TIM_CR1_CEN) {
             //     Delay_us100(100);
             //     xputchar('.');
             // }
             // xputchar('\n');
-            // TIM_Cmd(TIM1, DISABLE);
+            // TIM_Cmd(TIM2, DISABLE);
 
             // wait for the last transaction to clear up
             //while (SPI_I2S_GetFlagStatus(SPI_ADNS, SPI_I2S_FLAG_RXNE) == RESET);

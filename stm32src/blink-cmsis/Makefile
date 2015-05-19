@@ -16,7 +16,7 @@ ASFLAGS += -c
 CFLAGS += -mcpu=cortex-m3
 CFLAGS += -mthumb
 CFLAGS += -g
-CFLAGS += -O0
+CFLAGS += -O2
 CFLAGS += -Wall
 CFLAGS += -fmessage-length=0
 CFLAGS += -ffunction-sections 
@@ -44,13 +44,15 @@ STSRC += ./lib/STM32F10x_StdPeriph_Driver/src/stm32f10x_dma.c
 STSRC += ./lib/STM32F10x_StdPeriph_Driver/src/stm32f10x_tim.c
 STSRC += ./lib/STM32F10x_StdPeriph_Driver/src/stm32f10x_usart.c
 
-SRC += ./src/main.c
-SRC += ./src/adns-9800.c
-SRC += ./src/qenc.c
-SRC += ./src/usrat.c
-SRC += ./src/xprintf.c
-SRC += ./src/hard_fault_handler.c
-SRC += ./src/stm32f10x_it.c
+#SRC += ./src/main.c
+#SRC += ./src/adns-9800.c
+#SRC += ./src/qenc.c
+#SRC += ./src/usrat.c
+#SRC += ./src/xprintf.c
+#SRC += ./src/hard_fault_handler.c
+#SRC += ./src/stm32f10x_it.c
+SOURCEDIRS = ./src
+SRC += $(foreach DIR, $(SOURCEDIRS), $(wildcard $(DIR)/*.c))
 SRC += $(CMSISSRC)
 SRC += $(STSRC)
 		

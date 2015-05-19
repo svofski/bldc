@@ -27,6 +27,47 @@ static int usart_Configured = 0;
 
 volatile int USARTD = 0;
 
+volatile uint32_t emitLock = 0;
+
+int CompareExchange(volatile uint32_t *ptr, uint32_t oldValue, uint32_t newValue)
+{
+    if(__LDREXW(ptr) == oldValue)
+        return __STREXW(newValue, ptr) == 0;
+    __CLREX();
+    return 0;
+}
+
+void get_lock(volatile uint32_t *Lock_Variable)
+{
+	 // Note: __LDREXW and __STREXW are CMSIS functions
+	int status = 0;
+	do {
+		while (__LDREXW(Lock_Variable) != 0);
+		status = __STREXW(1, (uint32_t *)Lock_Variable); 
+	} while (status!=0); 
+	__DMB();		// Do not start any other memory access
+					// until memory barrier is completed
+	return;
+}
+
+int get_lock_fail(volatile uint32_t *Lock_Variable)
+{ // Note: __LDREXW and __STREXW are CMSIS functions
+	int status = 0;
+	while (__LDREXW(Lock_Variable) != 0); 
+	status = __STREXW(1, (uint32_t *)Lock_Variable); 
+	__DMB();
+	return status == 0;
+}
+
+
+void free_lock(volatile uint32_t *Lock_Variable)
+{ 	// Note: __LDREXW and __STREXW are CMSIS functions
+	__DMB(); // Ensure memory operations completed before
+	// releasing lock
+	*Lock_Variable = 0;
+	return;
+}
+
 void USART_Config(void)
 {
 	USART_InitTypeDef USART_InitStructure;
@@ -147,11 +188,10 @@ void emit()
 			if ((USART_DEBUG->SR & USART_SR_TXE) == 0) {  // USART_GetFlagStatus(USART_DEBUG, USART_FLAG_TXE) == RESET
 				break;
 			}
-
 			if (++tx_tail == BUFFER_SIZE) {
 				tx_tail = 0;
 			}
-			USART_DEBUG->DR = TxBuffer[tx_tail]; 	// USART_SendData(USART_DEBUG, TxBuffer[tx_tail]);
+			USART_DEBUG->DR = TxBuffer[tx_tail]; 	// USART_SendData(USART_DEBUG, TxBuffer[tx_tail]);			
 			USART_DEBUG->CR1 |= USART_CR1_TXEIE; 	// USART_ITConfig(USART_DEBUG, USART_IT_TXE, ENABLE);			
 		} else {			
 			USART_DEBUG->CR1 &= ~USART_CR1_TXEIE; 	// USART_ITConfig(USART_DEBUG, USART_IT_TXE, DISABLE);
@@ -171,24 +211,22 @@ int xputchar(int ch)
 	uint8_t count;
 	while ((count = tx_count()) == BUFFER_SIZE - 1);
 
-	// disable USART IRQ
-	USART_DEBUG->CR1 &= ~USART_CR1_TXEIE;
+	get_lock(&emitLock);
+	__disable_irq();
+	{
+		// put character in buffer
+		if (++tx_head == BUFFER_SIZE) {
+			tx_head = 0;
+		}
+		TxBuffer[tx_head] = (uint8_t) ch;
 
-	// put character in buffer
-	if (++tx_head == BUFFER_SIZE) {
-		tx_head = 0;
+		// if the buffer was empty, initiate transfer
+		if (count == 0) {
+		 	emit();
+		}
 	}
-	TxBuffer[tx_head] = (uint8_t) ch;
-
-	// enable USART IRQ
-	USART_DEBUG->CR1 |= USART_CR1_TXEIE;
-
-	// if the buffer was empty, initiate transfer
-	if (count == 0) {
-	 	// force trigger USART IRQ, interrupt is already enabled
-	 	USART_DEBUG->SR |= USART_SR_TXE;
-	}
-	
+	__enable_irq();
+	free_lock(&emitLock);
 	return ch;
 }
 
@@ -209,7 +247,11 @@ void USART3_IRQHandler(void)
 
 	// if transmit register empty
 	if ((USART_DEBUG->SR & USART_SR_TXE) != 0) {
-		emit();
+		//USART_ClearITPendingBit(USART_DEBUG, USART_IT_TXE); // cleared automatically
+		//if (get_lock_fail(&emitLock)) {
+			emit();
+		//	free_lock(&emitLock);
+		//}
 	}
 }
 

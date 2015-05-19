@@ -72,6 +72,11 @@ int QEnc_GetPosition(void)
 	return position;
 }
 
+void QEnc_Reset(void)
+{
+	position = 0;
+}
+
 void EXTI3_IRQHandler(void)
 {
     EXTI->PR |= EXTI_PR_PR3;
