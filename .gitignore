@@ -36,3 +36,11 @@ svg/**
 stm32flash/**
 
 *.swp
+
+adns-camera/bldc_thomas.png
+
+adns-camera/manchester-10.png
+
+stm32-kicad/psychopath.kicad_pcb
+
+stm32-kicad/bldc.net
