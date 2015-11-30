@@ -25,6 +25,8 @@ stm32-kicad/_autosave-bug.kicad_pcb
 
 stm32-kicad/svg/**
 
+stm32-kicad/dsn/**
+
 stm32-kicad/packages3d/**
 
 *.dsn
@@ -32,7 +34,5 @@ stm32-kicad/packages3d/**
 svg/**
 
 stm32flash/**
-
-adns-camera/**
 
 *.swp
